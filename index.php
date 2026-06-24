@@ -1,134 +1,111 @@
 <?php 
 session_start();
-include 'config/data.php';     
-include 'config/koneksi.php';  
+include 'config/koneksi.php';  // Koneksi database MySQL tetap aktif
+include 'config/data.php';     // Memanggil array master $parts untuk pencocokan
+
+$error_message = "";
 
 // ==========================================
-// 1. INISIALISASI DATA (SESSION STATE)
-// ==========================================
-if (!isset($_SESSION['parts_data'])) {
-    $_SESSION['parts_data'] = $parts; 
-}
-
-// ==========================================
-// 2. LOGIKA CRUD (TAMBAH & HAPUS KOMPONEN)
-// ==========================================
-// Proses Tambah Komponen
-if (isset($_POST['tambah_komponen'])) {
-    $nama = $_POST['nama_komponen'];
-    $harga = (int)$_POST['harga_komponen'];
-    $status = $_POST['status_komponen'];
-
-    $_SESSION['parts_data'][] = [
-        'nama' => $nama,
-        'harga' => $harga,
-        'status' => $status
-    ];
-    header("Location: index.php?page=dashboard");
-    exit;
-}
-
-// Proses Hapus Komponen
-if (isset($_GET['action']) && $_GET['action'] === 'hapus' && isset($_GET['id'])) {
-    $id_hapus = $_GET['id'];
-    if (isset($_SESSION['parts_data'][$id_hapus])) {
-        unset($_SESSION['parts_data'][$id_hapus]);
-        $_SESSION['parts_data'] = array_values($_SESSION['parts_data']); 
-    }
-    header("Location: index.php?page=dashboard");
-    exit;
-}
-
-// ==========================================
-// 3. KALKULASI TOTAL BIAYA (REAL-TIME)
+// 1. AMBIL DATA DARI MYSQL & KALKULASI BIAYA
 // ==========================================
 $total_estimasi = 0;
 $total_pengeluaran = 0;
+$parts_data = [];
 
-if (isset($_SESSION['parts_data']) && is_array($_SESSION['parts_data'])) {
-    foreach ($_SESSION['parts_data'] as $part) {
+try {
+    $query_parts = "SELECT * FROM components ORDER BY id DESC";
+    $stmt_parts = $conn->prepare($query_parts);
+    $stmt_parts->execute();
+    $parts_data = $stmt_parts->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($parts_data as $part) {
         $total_estimasi += $part['harga'];
         if ($part['status'] === "Sudah Dibeli") {
             $total_pengeluaran += $part['harga'];
         }
     }
+} catch (PDOException $e) {
+    echo "Gagal mengambil data dari database: " . $e->getMessage();
 }
 
 // ==========================================
-// 4. LOGIKA AUTENTIKASI (LOGIN & LOGOUT)
+// 2. LOGIKA TAMBAH BARANG LANGSUNG KE MYSQL
 // ==========================================
-$error_message = "";
-if (isset($_POST['login_submit'])) {
-    $username = $_POST['username'];
-    $password = $_POST['password'];
+if (isset($_POST['tambah_komponen'])) {
+    $nama_input = trim($_POST['nama_komponen']);
+    $status = $_POST['status_komponen'];
+    
+    $data_ditemukan = false;
+    $harga_otomatis = 0;
 
-    if ($username === 'Rizky Afandi' && $password === 'kiki118') {
-        $_SESSION['is_logged_in'] = true;
-        $_SESSION['username'] = $username;
+    // Cari harga aslinya di file data.php berdasarkan pilihan dropdown
+    foreach ($parts as $p) {
+        if (strcasecmp($p['nama'], $nama_input) === 0) {
+            $data_ditemukan = true;
+            $nama_input = $p['nama']; 
+            $harga_otomatis = $p['harga']; 
+            break;
+        }
+    }
+
+    if (!$data_ditemukan) {
+        $_SESSION['error_flash'] = "Peringatan: Komponen '" . htmlspecialchars($nama_input) . "' tidak terdaftar di data master!";
         header("Location: index.php?page=dashboard");
         exit;
     } else {
-        $error_message = "Username atau password salah!";
+        try {
+            $query_add = "INSERT INTO components (nama, harga, status) VALUES (:nama, :harga, :status)";
+            $stmt_add = $conn->prepare($query_add);
+            $stmt_add->bindParam(':nama', $nama_input);
+            $stmt_add->bindParam(':harga', $harga_otomatis);
+            $stmt_add->bindParam(':status', $status);
+            
+            if ($stmt_add->execute()) {
+                header("Location: index.php?page=dashboard");
+                exit;
+            }
+        } catch (PDOException $e) {
+            echo "Gagal menyimpan data ke MySQL: " . $e->getMessage();
+        }
     }
 }
 
-if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    session_destroy();
-    header("Location: index.php?page=login");
-    exit;
-}
-
 // ==========================================
-// LOGIKA REGISTRASI USER BARU VIA MYSQL
+// 3. LOGIKA HAPUS BARANG DARI MYSQL
 // ==========================================
-$success_message = "";
-if (isset($_POST['register_submit'])) {
-    $reg_username = trim($_POST['reg_username']);
-    $reg_password = $_POST['reg_password']; // Bisa ditingkatkan pakai password_hash() nanti
+if (isset($_GET['action']) && $_GET['action'] === 'hapus' && isset($_GET['id'])) {
+    $id_hapus = (int)$_GET['id'];
 
     try {
-        // 1. Cek dulu apakah username sudah pernah terdaftar atau belum
-        $cek_query = "SELECT COUNT(*) FROM users WHERE username = :username";
-        $cek_stmt = $conn->prepare($cek_query);
-        $cek_stmt->bindParam(':username', $reg_username);
-        $cek_stmt->execute();
+        $query_del = "DELETE FROM components WHERE id = :id";
+        $stmt_del = $conn->prepare($query_del);
+        $stmt_del->bindParam(':id', $id_hapus, PDO::PARAM_INT);
         
-        if ($cek_stmt->fetchColumn() > 0) {
-            $error_message = "Username sudah digunakan! Silakan cari nama lain.";
-        } else {
-            // 2. Jika aman, langsung masukkan data user baru ke tabel MySQL
-            $ins_query = "INSERT INTO users (username, password) VALUES (:username, :password)";
-            $ins_stmt = $conn->prepare($ins_query);
-            $ins_stmt->bindParam(':username', $reg_username);
-            $ins_stmt->bindParam(':password', $reg_password);
-            
-            if ($ins_stmt->execute()) {
-                $success_message = "Akun berhasil dibuat! Silakan <a href='index.php?page=login' class='underline font-bold text-blue-700'>Login</a>.";
-            }
+        if ($stmt_del->execute()) {
+            header("Location: index.php?page=dashboard");
+            exit;
         }
     } catch (PDOException $e) {
-        $error_message = "Gagal mendaftar: " . $e->getMessage();
+        echo "Gagal menghapus data di MySQL: " . $e->getMessage();
     }
 }
 
+// Ambil notifikasi error flash dari session jika ada
+if (isset($_SESSION['error_flash'])) {
+    $error_message = $_SESSION['error_flash'];
+    unset($_SESSION['error_flash']);
+}
+
 // ==========================================
-// 5. SISTEM ROUTING (MENGGUNAKAN FOLDER 'PAGAS')
+// 4. SISTEM ROUTING HALAMAN
 // ==========================================
 $page = isset($_GET['page']) ? $_GET['page'] : 'onboarding';
-
-if ($page === 'dashboard' && !isset($_SESSION['is_logged_in'])) {
-    header("Location: index.php?page=login");
-    exit;
-}
 
 if ($page === 'dashboard') {
     include 'components/header.php'; 
     include 'pagas/dashboard.php'; 
     include 'components/footer.php'; 
-} elseif ($page === 'login') {
-    include 'pagas/login.php';
-} elseif ($page === 'register') {
-    include 'pagas/register.php'; // 🎯 TAMBAHKAN BARIS INI BIAR BISA DIAKSES
 } else {
     include 'pagas/onboarding.php';
 }
+?>
