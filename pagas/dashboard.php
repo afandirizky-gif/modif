@@ -1,8 +1,3 @@
-if ($page === 'dashboard') {
-    include 'components/header.php'; 
-    include 'pages/dashboard.php'; // Dashboard baru bisa membaca variabel kalau kalkulasinya ditaruh di atas baris ini
-    include 'components/footer.php'; 
-}
 
 <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-lg shadow">
     <p class="text-gray-700 text-sm">Selamat datang, <span class="font-bold text-blue-600"><?php echo $_SESSION['username']; ?></span>! 👋</p>
