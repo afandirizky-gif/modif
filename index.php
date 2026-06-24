@@ -32,15 +32,14 @@ if ($page === 'dashboard' && !isset($_SESSION['is_logged_in'])) {
     header("Location: index.php?page=login");
     exit;
 }
-
-// 4. MEMANGGIL FILE DARI FOLDER PAGES (Sama kayak panggil Screen di Flutter)
+// Ubah menjadi pagas/ jika foldernya tidak diganti namanya:
 if ($page === 'dashboard') {
     include 'components/header.php'; 
-    include 'pages/dashboard.php'; 
+    include 'pagas/dashboard.php'; // <-- Ganti di sini
     include 'components/footer.php'; 
 } elseif ($page === 'login') {
-    include 'pages/login.php';
+    include 'pagas/login.php';      // <-- Ganti di sini
 } else {
-    include 'pages/onboarding.php';
+    include 'pagas/onboarding.php'; // <-- Ganti di sini (Baris 44)
 }
 ?>
